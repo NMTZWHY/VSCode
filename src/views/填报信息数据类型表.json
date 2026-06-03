@@ -1,0 +1,42 @@
+[
+  {
+    "stage_name": "一、基础信息",
+    "id": "name",
+    "name": "姓名",
+    "format": "文本",
+    "required": true,
+    "remark": "请填写真实姓名"
+  },
+  {
+    "stage_name": "一、基础信息",
+    "id": "phone",
+    "name": "手机号",
+    "format": "手机号",
+    "required": true,
+    "remark": "请填写常用手机号"
+  },
+  {
+    "stage_name": "一、基础信息",
+    "id": "email",
+    "name": "邮箱",
+    "format": "邮箱",
+    "required": true,
+    "remark": "请填写常用邮箱"
+  },
+  {
+    "stage_name": "二、单位信息",
+    "id": "company_name",
+    "name": "单位名称",
+    "format": "文本",
+    "required": true,
+    "remark": "请填写所在单位全称"
+  },
+  {
+    "stage_name": "二、单位信息",
+    "id": "company_type",
+    "name": "单位类型",
+    "format": "下拉选择",
+    "required": true,
+    "remark": "高校|科研院所|企业|其他"
+  }
+]
