@@ -3,9 +3,9 @@ import Vue from 'vue'
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: 'http://localhost:8000/api', // ✅ 正确的baseURL，包含/api前缀
+  baseURL: 'http://localhost:8000/api',
   timeout: 15000,
-  withCredentials: true // ✅ 必须开启，携带登录Cookie
+  withCredentials: true // 携带Cookie、Session、CSRF Cookie
 })
 
 // 获取Cookie中的csrftoken
@@ -22,12 +22,24 @@ function getCookie(name) {
 
 // 请求拦截器：自动携带Django CSRF Token
 service.interceptors.request.use(config => {
-  if (config.method.toLowerCase() !== 'get') {
+  // 登录、注册接口 不附加CSRF
+  const skipCsrfList = ['/login/', '/register/']
+  const isSkipCsrf = skipCsrfList.some(path => config.url.includes(path))
+
+  // 非GET、非跳过接口，附加CSRF
+  if (!isSkipCsrf && config.method.toLowerCase() !== 'get') {
     const token = getCookie('csrftoken')
     if (token) {
       config.headers['X-CSRFToken'] = token
     }
   }
+
+  // ========== 关键修复：文件上传自动清空Content-Type ==========
+  // 上传文件时，让axios自动设置 multipart/form-data，不要手动指定
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
+
   return config
 }, err => {
   console.error('请求拦截器错误：', err)
@@ -37,12 +49,9 @@ service.interceptors.request.use(config => {
 
 // 响应拦截器
 service.interceptors.response.use(
-  // 请求成功：直接返回后端数据（剥离axios包装层）
   res => res.data,
-  
-  // 请求失败：统一错误处理
   err => {
-    // 1. 处理网络错误和超时
+    // 1. 网络/超时错误
     if (!err.response) {
       if (err.message.includes('timeout')) {
         Vue.prototype.$message.error('请求超时，请稍后重试')
@@ -52,24 +61,23 @@ service.interceptors.response.use(
       return Promise.reject(err)
     }
 
-    // 2. 处理401未授权错误
+    // 2. 401 未登录/登录失败
     if (err.response.status === 401) {
-      // 精确匹配登录接口（避免误判）
       const isLoginApi = err.config.url === '/login/'
-      
       if (!isLoginApi) {
-        // 非登录接口：清除登录状态并跳转到登录页
         localStorage.removeItem('user')
         Vue.prototype.$message.warning('登录已过期，请重新登录')
         window.location.href = '/login/'
-      }else{
-        console.log('request.js输出:'+err.response.data.msg)
-        Vue.prototype.$message.error(err.response.data.msg)
+      } else {
+        Vue.prototype.$message.error(err.response.data?.msg || '用户名或密码错误')
       }
-    } 
-    // 3. 处理其他错误状态码
+    }
+    // 3. 403 权限不足（管理员接口、未授权访问）
+    else if (err.response.status === 403) {
+      Vue.prototype.$message.error(err.response.data?.msg || '暂无权限访问')
+    }
+    // 4. 其他状态码
     else {
-      // 优先显示后端返回的错误信息
       if (err.response.data?.msg) {
         Vue.prototype.$message.error(err.response.data.msg)
       } else {

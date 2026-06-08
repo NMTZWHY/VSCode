@@ -484,13 +484,14 @@
     </div>
 
     <!-- 富文本隐藏图片上传组件 -->
-    <el-upload ref="quillUpload" :action="uploadImgUrl" :show-file-list="false" :on-success="uploadImgSuccess"
-      :on-error="uploadImgError" accept="image/*" style="display: none;"></el-upload>
+    <el-upload ref="quillUpload" action="#" :show-file-list="false" :auto-upload="true" :http-request="customUpload"
+      :before-upload="beforeUploadCheck" accept="image/jpeg,image/png,image/gif" style="display: none;">
+    </el-upload>
   </div>
 </template>
 
 <script>
-import { submitApplication } from '@/api/research'
+import { submitApplication, uploadRichImg } from '@/api/research'
 import { quillEditor } from 'vue-quill-editor'
 import 'quill/dist/quill.snow.css'
 import Quill from 'quill'
@@ -532,7 +533,7 @@ export default {
   },
   data() {
     return {
-      uploadImgUrl: '/upload/image',
+      // uploadImgUrl: '/upload/image',
       uploadLoading: false,
       currentQuill: null,
       currentStep: 0,
@@ -550,7 +551,17 @@ export default {
             ['table', 'image'],
             ['clean']
           ]
-        }
+        },
+        // 必须显式声明！否则不生效
+        formats: [
+          'font', 'size',
+          'bold', 'italic', 'underline',
+          'color', 'background',
+          'align',
+          'list', 'bullet',
+          'table', 'image',  // 必须加上image！
+          'clean'
+        ]
       },
       datePickerOptions: {
         disabledDate: (time) => {
@@ -796,19 +807,49 @@ export default {
 
     handleQuillImg(quill) {
       this.currentQuill = quill
+      // 阻止Quill原生默认图片弹窗，避免弹出两个文件选择框
+      quill.format('image', false)
+      // 触发隐藏上传组件的文件选择
       this.$refs.quillUpload.$refs.upload.click()
     },
-    uploadImgSuccess(res) {
-      if (res.code === 200) {
-        const index = this.currentQuill.getSelection().index
-        this.currentQuill.insertEmbed(index, 'image', res.data.url)
-        this.currentQuill.setSelection(index + 1)
-      } else {
-        this.$message.error('图片上传失败')
+    beforeUploadCheck(file) {
+      const allowTypes = ['image/jpeg', 'image/png', 'image/gif']
+      const isTypeOk = allowTypes.includes(file.type)
+      const isSizeOk = file.size / 1024 / 1024 < 2 // 限制2MB
+
+      if (!isTypeOk) {
+        this.$message.error('仅支持 JPG / PNG / GIF 格式图片')
+        return false // 校验失败，终止上传
       }
+      if (!isSizeOk) {
+        this.$message.error('图片大小不能超过 2MB')
+        return false
+      }
+      return true // 校验通过，继续上传
     },
-    uploadImgError() {
-      this.$message.error('图片上传接口异常')
+    async customUpload(option) {
+      // el-upload 自定义上传会传入 option 对象，option.file 就是选中的文件
+      const file = option.file
+
+      try {
+        // 直接调用你已封装好的上传接口
+        const res = await uploadRichImg(file)
+
+        // 按你后端返回格式判断结果
+        if (res.code === 200 && res.data && res.data.url) {
+          // 获取富文本光标位置
+          const range = this.currentQuill.getSelection(true)
+          // 插入图片到光标位置
+          this.currentQuill.insertEmbed(range.index, 'image', res.data.url)
+          // 光标后移一位，提升操作体验
+          this.currentQuill.setSelection(range.index + 1)
+        } else {
+          this.$message.error(res.msg || '图片上传失败')
+        }
+      } catch (err) {
+        this.$message.error('上传请求异常，请检查网络或接口')
+        console.error('图片上传报错：', err)
+      }
     },
     prevStep() {
       if (this.currentStep > 0) {
@@ -850,6 +891,25 @@ export default {
           Object.values(this.formData).forEach(stepForm => {
             Object.assign(fullData, stepForm)
           })
+          // ==========关键修复：daterange数组拼接字符串==========
+          if (Array.isArray(fullData.validPeriod)) {
+            // 选了日期 → 拼接
+            if (fullData.validPeriod.length === 2) {
+              fullData.validPeriod = fullData.validPeriod.join('~')
+            }
+            // 空数组 → 赋值字符串"无"
+            else {
+              fullData.validPeriod = "无"
+            }
+          }
+          // 验收状态空值赋值0
+          if (fullData.acceptStatus === '') fullData.acceptStatus = '0'
+          if (Array.isArray(fullData.organizationStructure)) {
+            fullData.organizationStructure = JSON.stringify(fullData.organizationStructure)
+          }
+          if (Array.isArray(fullData.academicCommitteeStructure)) {
+            fullData.academicCommitteeStructure = JSON.stringify(fullData.academicCommitteeStructure)
+          }
           const backendData = this.convertToSnakeCase(fullData)
           submitApplication(backendData)
             .then(() => {
@@ -1083,11 +1143,11 @@ export default {
 }
 
 ::v-deep .ql-snow .ql-picker.ql-font {
-  width: 75px !important;
+  width: 150px !important;
 }
 
 ::v-deep .ql-snow .ql-picker.ql-size {
-  width: 55px !important;
+  width: 80px !important;
 }
 
 ::v-deep .ql-snow .ql-picker.ql-align {
@@ -1316,5 +1376,107 @@ export default {
   border-radius: 0 !important;
   box-shadow: none !important;
   min-height: 200px;
+}
+::v-deep .rich-text-wrapper .ql-editor img {
+  /* 最大宽度为编辑框的85%，不会占满整个宽度 */
+  max-width: 50% !important;
+  /* 高度自动，保持原始宽高比，避免拉伸变形 */
+  height: auto !important;
+  /* 图片居中显示，上下左右留白 */
+  display: block;
+  margin: 12px auto !important;
+  /* 可选：添加圆角和轻微阴影，提升美观度 */
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+</style>
+<style>
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="SimSun"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="SimSun"]::before {
+  content: "宋体";
+  font-family: SimSun;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="SimHei"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="SimHei"]::before {
+  content: "黑体";
+  font-family: SimHei;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="Microsoft-YaHei"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="Microsoft-YaHei"]::before {
+  content: "微软雅黑";
+  font-family: "Microsoft YaHei";
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="KaiTi"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="KaiTi"]::before {
+  content: "楷体";
+  font-family: KaiTi;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="FangSong"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="FangSong"]::before {
+  content: "仿宋";
+  font-family: FangSong;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="Arial"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="Arial"]::before {
+  content: "Arial";
+  font-family: Arial;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="Times-New-Roman"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="Times-New-Roman"]::before {
+  content: "Times New Roman";
+  font-family: "Times New Roman";
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="sans-serif"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="sans-serif"]::before {
+  content: "系统默认";
+  font-family: sans-serif;
+}
+
+/* 字号显示 */
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="12px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="12px"]::before {
+  content: "12px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="14px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="14px"]::before {
+  content: "14px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="16px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="16px"]::before {
+  content: "16px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="18px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="18px"]::before {
+  content: "18px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="20px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="20px"]::before {
+  content: "20px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="24px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="24px"]::before {
+  content: "24px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="28px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="28px"]::before {
+  content: "28px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="32px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="32px"]::before {
+  content: "32px";
 }
 </style>
