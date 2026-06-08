@@ -484,13 +484,13 @@
     </div>
 
     <!-- 富文本隐藏图片上传组件 -->
-    <el-upload ref="quillUpload" :action="uploadImgUrl" :show-file-list="false" :on-success="uploadImgSuccess"
-      :on-error="uploadImgError" accept="image/*" style="display: none;"></el-upload>
+    <el-upload ref="quillUpload" :show-file-list="false" :on-success="uploadImgSuccess" :on-error="uploadImgError"
+      accept="image/*" style="display: none;"></el-upload>
   </div>
 </template>
 
 <script>
-import { submitApplication } from '@/api/research'
+import { submitApplication, uploadRichImg } from '@/api/research'
 import { quillEditor } from 'vue-quill-editor'
 import 'quill/dist/quill.snow.css'
 import Quill from 'quill'
@@ -532,7 +532,7 @@ export default {
   },
   data() {
     return {
-      uploadImgUrl: '/upload/image',
+      // uploadImgUrl: '/upload/image',
       uploadLoading: false,
       currentQuill: null,
       currentStep: 0,
@@ -550,7 +550,9 @@ export default {
             ['table', 'image'],
             ['clean']
           ]
-        }
+        },
+        // 必须显式声明！否则不生效
+        formats: ['font', 'size', 'align', 'list', 'color', 'background']
       },
       datePickerOptions: {
         disabledDate: (time) => {
@@ -796,15 +798,21 @@ export default {
 
     handleQuillImg(quill) {
       this.currentQuill = quill
+      // 触发原生 input 选择文件
       this.$refs.quillUpload.$refs.upload.click()
     },
-    uploadImgSuccess(res) {
-      if (res.code === 200) {
-        const index = this.currentQuill.getSelection().index
-        this.currentQuill.insertEmbed(index, 'image', res.data.url)
-        this.currentQuill.setSelection(index + 1)
-      } else {
-        this.$message.error('图片上传失败')
+    async uploadImgSuccess(file) {
+      try {
+        const res = await uploadRichImg(file)
+        if (res.code === 200) {
+          const index = this.currentQuill.getSelection().index
+          this.currentQuill.insertEmbed(index, 'image', res.data.url)
+          this.currentQuill.setSelection(index + 1)
+        } else {
+          this.$message.error('图片上传失败')
+        }
+      } catch (err) {
+        this.$message.error('图片上传接口异常')
       }
     },
     uploadImgError() {
@@ -850,6 +858,25 @@ export default {
           Object.values(this.formData).forEach(stepForm => {
             Object.assign(fullData, stepForm)
           })
+          // ==========关键修复：daterange数组拼接字符串==========
+          if (Array.isArray(fullData.validPeriod)) {
+            // 选了日期 → 拼接
+            if (fullData.validPeriod.length === 2) {
+              fullData.validPeriod = fullData.validPeriod.join('~')
+            }
+            // 空数组 → 赋值字符串"无"
+            else {
+              fullData.validPeriod = "无"
+            }
+          }
+          // 验收状态空值赋值0
+          if (fullData.acceptStatus === '') fullData.acceptStatus = '0'
+          if (Array.isArray(fullData.organizationStructure)) {
+            fullData.organizationStructure = JSON.stringify(fullData.organizationStructure)
+          }
+          if (Array.isArray(fullData.academicCommitteeStructure)) {
+            fullData.academicCommitteeStructure = JSON.stringify(fullData.academicCommitteeStructure)
+          }
           const backendData = this.convertToSnakeCase(fullData)
           submitApplication(backendData)
             .then(() => {
@@ -1083,11 +1110,11 @@ export default {
 }
 
 ::v-deep .ql-snow .ql-picker.ql-font {
-  width: 75px !important;
+  width: 150px !important;
 }
 
 ::v-deep .ql-snow .ql-picker.ql-size {
-  width: 55px !important;
+  width: 80px !important;
 }
 
 ::v-deep .ql-snow .ql-picker.ql-align {
@@ -1316,5 +1343,95 @@ export default {
   border-radius: 0 !important;
   box-shadow: none !important;
   min-height: 200px;
+}
+</style>
+<style>
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="SimSun"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="SimSun"]::before {
+  content: "宋体";
+  font-family: SimSun;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="SimHei"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="SimHei"]::before {
+  content: "黑体";
+  font-family: SimHei;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="Microsoft-YaHei"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="Microsoft-YaHei"]::before {
+  content: "微软雅黑";
+  font-family: "Microsoft YaHei";
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="KaiTi"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="KaiTi"]::before {
+  content: "楷体";
+  font-family: KaiTi;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="FangSong"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="FangSong"]::before {
+  content: "仿宋";
+  font-family: FangSong;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="Arial"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="Arial"]::before {
+  content: "Arial";
+  font-family: Arial;
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="Times-New-Roman"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="Times-New-Roman"]::before {
+  content: "Times New Roman";
+  font-family: "Times New Roman";
+}
+
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="sans-serif"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="sans-serif"]::before {
+  content: "系统默认";
+  font-family: sans-serif;
+}
+
+/* 字号显示 */
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="12px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="12px"]::before {
+  content: "12px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="14px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="14px"]::before {
+  content: "14px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="16px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="16px"]::before {
+  content: "16px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="18px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="18px"]::before {
+  content: "18px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="20px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="20px"]::before {
+  content: "20px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="24px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="24px"]::before {
+  content: "24px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="28px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="28px"]::before {
+  content: "28px";
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="32px"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="32px"]::before {
+  content: "32px";
 }
 </style>

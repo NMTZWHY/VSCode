@@ -4,18 +4,47 @@ import router from './router'
 import ElementUI from 'element-ui'
 import 'element-ui/lib/theme-chalk/index.css'
 import 'animate.css/animate.min.css'
+import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
+import { quillEditor } from 'vue-quill-editor'
 import VueCookies from 'vue-cookies'
+import request from './api/request'
 
 import HorizontalTree from '@/components/HorizontalTree/HorizontalTree'
 Vue.use(HorizontalTree)
 
 Vue.use(ElementUI)
 Vue.use(VueCookies)
-
+Vue.prototype.$axios = request
 // 全局事件总线
 Vue.prototype.$bus = new Vue()
 Vue.prototype.$confirm = ElementUI.MessageBox.confirm
+
+const fontList = [
+  'SimSun',
+  'SimHei',
+  'Microsoft-YaHei',
+  'KaiTi',
+  'FangSong',
+  'Arial',
+  'Times-New-Roman',
+  'sans-serif'
+]
+const Font = Quill.import('formats/font')
+Font.whitelist = fontList
+Quill.register(Font, true)
+
+// ========== 全局注册字号 ==========
+const sizeList = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px']
+const Size = Quill.import('attributors/style/size')
+Size.whitelist = sizeList
+Quill.register(Size, true)
+
+// ========== 注册对齐 ==========
+const Align = Quill.import('attributors/style/align')
+Quill.register(Align, true)
+
+Vue.component('quillEditor', quillEditor)
 
 // ✅ 核心：重写全局$message方法，实现真正的全局统一配置
 const originalMessage = ElementUI.Message
